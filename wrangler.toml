@@ -1,0 +1,21 @@
+name = "tradingview-ftx-worker"
+type = "javascript"
+
+account_id = ""
+workers_dev = true
+route = ""
+zone_id = ""
+compatibility_date = "2022-01-05"
+
+[vars]
+ENVIRONMENT = "production"
+
+# [secrets]
+# FTX_API_KEY
+# FTX_SECRET
+# FTX_SUBACCOUNT
+# FTX_API_WHITELIST = {"/api/orders":{"methods":["POST"]}}
+
+[env.staging.vars]
+ENVIRONMENT = "staging"
+
