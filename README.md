@@ -1,78 +1,85 @@
 # Cloudflare FTX Trading Worker
 
-This project implements a simple Cloudflare FTX Trading Worker. 
+Do you want to connect your live-runnning [TradingView Strategy](https://www.tradingview.com/pine-script-docs/en/v4/essential/Strategies.html) to [FTX](https://ftx.com/) in a robust way? If yes, this project is most likely for u! If you are not sure, then this project is most likely not for u as it is for a very special purpose. 
 
-This project started when I needed to glue together my back-tested [TradingView](https://www.tradingview.com/)
-strategies with the FTX Trading APIs:
+# Architecture
+
+[TradingView Alert Web-hook](https://www.tradingview.com/support/solutions/43000481368-strategy-alerts/)
+
+[Cloudflare Worker](https://workers.cloudflare.com/)
 
 **TODO**: ASCII system design
 
-# Features
+# Quick Start (only requires Cloudflare Workers account)
 
-- **Anti-Spoof Protection**: The TradingView Alert needs to authenticate itself.
-- **Security**: Your FTX credentials is only known to your Cloudflare worker.
-- **API Firewall**: Only explicitly whitelisted APIs are allowed.
-- **API Firewall**: Only explicitly whitelisted APIs are allowed.
-
-# Usage
-
-The following assumes that you have whitelisted (see `FTX_API_WHITELIST`) `POST` to `/api/orders`.
+You will not be able to do much trading but you can quickly try out this project by deploying it to your Cloudflare Workers account with:
 
 ```shell
-export MY_WORKER=my-worker.my-org.workers.dev
-cat >order.json <<EOF
-{
-  "apiKey": "OkiMqf4ryc72qYEplYQwT9cI1ebHgYwwpcEk5qSf",
-  "path": "/api/orders",
-  "method": "POST",
-  "body": {
-    "market": "BTC-PERP",
-    "side": "buy",
-    "type": "limit",
-    "size": 0.0001,
-    "price": 20000
-  }
-}
-EOF
-curl -v -X POST "https://$MY_WORKER" --data-binary @order.json
+wrangler publish --env=staging
 ```
 
-# Secrets
-
-Most secrets can be configured both statically as [secret Cloudflare Worker environment variables](https://developers.cloudflare.com/workers/platform/environment-variables) and dynamically in each POST (JSON) request sent to the Worker.
-
-Dynamic secrets has precedence over corresponding static secret.
-
-| Static Secret | Dynamic Secret | Notes |
-| --- | --- | --- |
-| `FTX_API_WHITELIST` | | All FTX API calls need to be explicitly whitelisted. Example: `{"/api/orders":{"methods":["POST"]}}` |
-| `ALLOWED_IPS` | | Optional whitelist of allowed IPs, for example: `["1.1.1.1"]`. By default all IPs are allowed to connect to the Worker. |
-| `FTX_API_KEY` | `{ "apiKey": "..." }` | Your FTX API Key. Optional - see "Security Best Practices" |
-| `FTX_SECRET` | `{ "secret": "..." }` | Your FTX API Secret. Optional - see "Security Best Practices" |
-| `FTX_SUBACCOUNT` | `{ "subAccount": "..." }` | Your FTX sub-account. Optional - see "Security Best Practices" |
-
-## Static Secrets
-
-For example, this is how to define the `FTX_API_WHITELIST` with [wrangler](https://developers.cloudflare.com/workers/get-started/guide):
+Connect to your the logs with:
 
 ```shell
-wrangler secret put FTX_API_WHITELIST
+wrangler tail --env=staging
 ```
 
-## Dynamic Secrets
-
-The POST data to the worker can optionally include any of the following FTX API credentials:
+POST an TradingView alert with:
 
 ```shell
-{
-    "apiKey": "...",
-    "secret": "...",
-    "subAccount": "...",
-    ...
-}
+# TODO: change to your workers.dev subdomain
+export WORKERS_SUBDOMAIN=example.workers.dev
+# TODO: change to your own token
+export TRADINGVIEW_TOKEN=iP3tGqlTu8PMeA7gDBY7CtVxt7P9Eaw55BWjsHAagX20+aRoojWAjTncMIBnfPe1/rBzyNWmkke/Efhp18nlbg==
+curl -v "https://tradingview-ftx-worker-staging.$WORKERS_SUBDOMAIN" \
+    -d "BTCPERP: buy 0.0001 @ 20000 $TRADINGVIEW_TOKEN"
 ```
-## Security Best Practices
 
-1. Create and use a dedicated FTX sub-account if you intend to trade.
-1. Your FTX Key/Secret should have minimal privileges - create read-only Key/Secret if you do not need to trade.
-1. **Never define both `FTX_API_KEY` and `FTX_SECRET` when trading - this will leave your Worker unsecured.**
+Your worker should while about `FTX_API_KEY` not being defined at this point.
+
+# Pre-requisites
+
+1. Get a (free) Cloudflare Workers account as described [here]](https://developers.cloudflare.com/workers/get-started/guide).
+1. Sign up for a (payed) [TradingView Pro](https://www.tradingview.com/gopro/#plans) plan.
+1. Sign up for a (free) FTX Trading account. You can get 5% discount by using my referral [here](https://ftx.com/profile#a=tradingviewftxworker).
+1. Create an FTX sub-account and corresponding API Key with trading capabilities.
+
+# User Guide
+
+## Cloudflare Workers Setup
+
+### Secret Environment Variables
+
+Define the following [secret environment variables](https://developers.cloudflare.com/workers/platform/environment-variables) to your Cloudflare worker:
+
+| Name | Purpose |
+| --- | --- |
+| `FTX_API_KEY` | Your FTX API key, which you generate from your [FTX account settings](https://ftx.com/profile) |
+| `FTX_SECRET` | Your FTX API secret associated with your `FTX_API_KEY` |
+| `FTX_SUBACCOUNT` | Optional "sandbox" for your Worker. Highly recommended. |
+| `TRADINGVIEW_TOKEN` | This authenticates your TradingView alerts and will need to be included in your alerts. It is recommended that you generate one with 512-bits of entropy: `head -c 64 /dev/urandom | base64`. |
+
+### Normal (not-secret) Environment Variables
+
+**NOTE**: Although you can change this from the Cloudflare UI, the values get reset to whatever is in [wrangler.toml](./wrangler.toml) every time you publish your worker with the `wrangler` CLI.
+
+| Name | Purpose |
+| --- | --- |
+| `ALERT_PATTERN` | [RegExp](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Regular_Expressions) for parsing the TradeView alert message. Feel free to change but keep the named groups. |
+| `ALLOWED_IPS` | Whitelists the [TradingView Alert Service IPs](https://www.tradingview.com/support/solutions/43000529348-about-webhooks/). Normally, you don't want to change these. |
+| `COOLDOWN_SECONDS` | Seconds of delay before retrying failed  (HTTP >=500) FTX API requests. You can decrease this down to 1 seconds if you are really eager. |
+| `MAX_RETRIES` | Seconds of times failed (HTTP >=500) FTX API requests are retryied before timeout occurs. |
+
+## TradingView Alert Setup
+
+Specify your Worker's URL as **Webhook URL**.
+
+For **LIMIT** orders use the following message (replace $TRADINGVIEW_TOKEN with your own token):
+```
+{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}} $TRADINGVIEW_TOKEN
+```
+
+For **MARKET** orders use the following message (replace $TRADINGVIEW_TOKEN with your own token)
+```
+{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}} $TRADINGVIEW_TOKEN
+```

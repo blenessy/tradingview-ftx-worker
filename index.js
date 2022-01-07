@@ -1,3 +1,14 @@
+// TradingView ticker pattern
+const TICKER_PATTERN = /(\w+)(PERP|USD|\d{4,})/i;
+
+/**
+ * Sleep for the given amount of time,
+ * @param {String} ms - Number of milliseconds to sleep.
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 /**
  * Generate FTX Request headers with authentication information.
  * @param {String} apiKey - FTX API key
@@ -34,6 +45,8 @@ async function generateFtxRequestHeaders(apiKey, secret, method, path, body, sub
   if (subAccount) {
     headers["ftx-subaccount"] = subAccount
   }
+  console.log(signable)
+  console.log(JSON.stringify(headers))
   return headers
 }
 
@@ -50,6 +63,51 @@ function tryParseJSON(text) {
 }
 
 /**
+ * Converts a TradeView ticker to and FTX market
+ * @param {String} ticker - the ticker to convert
+ */
+function convertTickerToMarket(ticker) {
+  const match = ticker.match(TICKER_PATTERN)
+  if (match) {
+    const quote = match[1].toUpperCase()
+    const base = match[2].toUpperCase()
+    return base === "USD" ? `${quote}/${base}` : `${quote}-${base}`
+  }
+  return null
+}
+
+/**
+ * Parse the given text and return the a valid body to POST to FTX /api/orders API.
+ * 
+ * @note The text needs to contain a valid token otherwise null is returned.
+ * 
+ * @param {String} pattern - the pattern to match
+ * @param {String} text - the String to parse
+ * @param {String} token - the expected token in text
+ */
+function parseOrder(pattern, text, token) {
+  try {
+    const match = text.match(new RegExp(pattern, 's'))
+    if (match && match.groups.token === token) {
+      const market = convertTickerToMarket(match.groups.ticker)
+      const size = parseFloat(match.groups.size)
+      if (market && size > 0) {
+        const price = match.groups.price || parseFloat(match.groups.price) || null
+        return {
+          "market": market,
+          "side": match.groups.side === "buy" ? "buy" : "sell",
+          "type": price ? "limit" : "market",
+          "size": size,
+          "price": price
+        }
+      }
+    }
+  } catch (_) {
+  }
+  return null
+}
+
+/**
  * Respond with the FTX API response.
  * @param {Request} request - the incoming request to handler
  */
@@ -58,70 +116,58 @@ async function handleRequest(request) {
     "content-type": "application/json"
   }
 
-  // When ALLOWED_IPS is defined, only those IP addresses are allowed to connect.
-  const allowedIPs = tryParseJSON(typeof ALLOWED_IPS !== 'undefined' ? ALLOWED_IPS : null)
-  if (allowedIPs && !allowedIPs.includes(request.headers.get('CF-Connecting-IP'))) {
+  if (ALLOWED_IPS && !ALLOWED_IPS.includes(request.headers.get('CF-Connecting-IP'))) {
     return new Response('', { status: 401, headers: headers })
   }
 
-  // Mandatory Environment
-  const whitelist = tryParseJSON(typeof FTX_API_WHITELIST !== 'undefined' ? FTX_API_WHITELIST : null)
-  if (!whitelist) {
-    console.error("FTX_API_WHITELIST not defined or not valid JSON")
+  // make sure that mandatory Environment variables are defined
+  if (typeof FTX_API_KEY === 'undefined') {
+    console.error('FTX_API_KEY is undefined')
+    return new Response('', { status: 500, headers: headers })
+  }
+  if (typeof FTX_SECRET === 'undefined') {
+    console.error('FTX_SECRET is undefined')
+    return new Response('', { status: 500, headers: headers })
+  }
+  if (typeof TRADINGVIEW_TOKEN === 'undefined') {
+    console.error('TRADINGVIEW_TOKEN is undefined')
     return new Response('', { status: 500, headers: headers })
   }
 
-  if (request.method.toUpperCase() !== "POST") {
-    return new Response('', { status: 405, headers: headers })
+  console.log(`alertPattern: '${ALERT_PATTERN}'`)
+  const order = parseOrder(ALERT_PATTERN, await request.text(), TRADINGVIEW_TOKEN)
+  if (!order) {
+    console.error("Request body is not valid")
+    return new Response('', { status: 400, headers: headers })    
   }
 
-  // Parse the request object
-  const ftx = tryParseJSON(await request.text())
-  if (!ftx) {
-    console.error("request body is not a valid JSON")
-    return new Response('', { status: 400, headers: headers })
-  }
+  const ftxBody = JSON.stringify(order)
+  console.log(`ftxBody: '${ftxBody}'`)
 
-  // Optional (default) Environment
-  const ftxApiKey = ftx.apiKey || (typeof FTX_API_KEY !== 'undefined' ? FTX_API_KEY : null)
-  const ftxSecret = ftx.secret || (typeof FTX_SECRET !== 'undefined' ? FTX_SECRET : null)
-  const ftxSubAccount = ftx.subAccount || (typeof FTX_SUBACCOUNT !== 'undefined' ? FTX_SUBACCOUNT : null)
-  if (!ftxApiKey || !ftxSecret) {
-    console.error('missing FTX API authentication credentials')
-    return new Response('', { status: 400, headers: headers })
+  // fetch FTX API
+  const ftxSubAccount = typeof FTX_SUBACCOUNT !== 'undefined' ? FTX_SUBACCOUNT : null
+  const ftxHeaders = await generateFtxRequestHeaders(
+    FTX_API_KEY, FTX_SECRET, 'POST', '/api/orders', ftxBody, ftxSubAccount
+  )
+  const fetchInit = {
+    method: 'POST',
+    headers: ftxHeaders,
+    body: ftxBody
   }
-  if (!ftx.path || !ftx.path.startsWith("/api/")) {
-    console.error('missing or invalid FTX API path')
-    return new Response('', { status: 400, headers: headers })
+  
+  // retry order until finished or timer expired
+  const cooldownMillis = Math.max(COOLDOWN_SECONDS, 1) * 1000  // lets be nice to the FTX API (min 1 seconds)
+  for (let i = 1; i <= MAX_RETRIES; i++) {
+    const response = await fetch('https://ftx.com/api/orders', fetchInit)
+    // consume the Response object otherwise we will run out of connections quickly
+    const text = await response.text()
+    if (response.status < 500) {
+      return new Response(text, { status: response.status, headers: headers })
+    }
+    console.warn(`FTX returned ${response.status} (attempt: ${i})- trying again later ...`)
+    await sleep(cooldownMillis)
   }
-  const ftxMethod = (ftx.method || 'GET').toUpperCase()
-  if (!["GET", "POST", "DELETE"].includes(ftxMethod)) {
-    console.error(`invalid FTX API method: ${ftxMethod}`)
-    return new Response('', { status: 400, headers: headers })
-  }
-  if (ftxMethod === "POST" && !ftx.body) {
-    console.error("missing body for FTX POST request")
-    return new Response('', { status: 400, headers: headers })
-  }
-
-  // make sure that the invoked API has been whitelisted
-  if (!(ftx.path in whitelist && whitelist[ftx.path].methods.includes(ftxMethod))) {
-    console.error(`FTX API method or path is not allowed: ${ftxMethod} ${ftx.path}`)
-    return new Response('', { status: 403, headers: headers })
-  }
-
-  // fetch Request init object
-  const ftxBody = ftx.body ? JSON.stringify(ftx.body) : ''
-  const response = await fetch(`https://ftx.com${ftx.path}`, {
-    method: ftxMethod,
-    headers: await generateFtxRequestHeaders(
-      ftxApiKey, ftxSecret, ftxMethod, ftx.path, ftxBody, ftxSubAccount
-    ),
-    body: ftxBody || null,
-  })
-
-  // return the response code and body
-  return new Response(await response.text(), { status: response.status, headers: headers })
+  return new Response(text, { status: 504, headers: headers })
 }
 
 addEventListener('fetch', event => {
