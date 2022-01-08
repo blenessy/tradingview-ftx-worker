@@ -51,18 +51,6 @@ async function generateFtxRequestHeaders(apiKey, secret, method, path, body, sub
 }
 
 /**
- * Parse the given text and return an Object or null if it is invalid
- * @param {String} text - the String to parse
- */
-function tryParseJSON(text) {
-  try {
-    return text ? JSON.parse(text) : null
-  } catch(e) {
-    return null
-  }
-}
-
-/**
  * Converts a TradeView ticker to and FTX market
  * @param {String} ticker - the ticker to convert
  */
@@ -87,7 +75,7 @@ function convertTickerToMarket(ticker) {
  */
 function parseOrder(pattern, text, token) {
   try {
-    const match = text.match(new RegExp(pattern, 's'))
+    const match = text.match(new RegExp(pattern, 'sm'))
     if (match && match.groups.token === token) {
       const market = convertTickerToMarket(match.groups.ticker)
       const size = parseFloat(match.groups.size)

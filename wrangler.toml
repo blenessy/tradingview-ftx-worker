@@ -8,7 +8,7 @@ zone_id = ""
 compatibility_date = "2022-01-05"
 
 [vars]
-ALERT_PATTERN = "^\\s*(?<ticker>\\w+): (?<side>buy|sell) (?<size>\\S+)(?: @ (?<price>\\S+))?.* (?<token>\\S+)\\s*$"
+ALERT_PATTERN = "^\\s*(?<ticker>\\w+): (?<side>buy|sell) (?<size>\\S+)(?: @ (?<price>\\S+))?.*\\s(?<token>\\S+)\\s*$"
 ALLOWED_IPS = ""
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60
@@ -21,7 +21,7 @@ MAX_RETRIES = 60
 # ALLOWED_IPS
 
 [env.staging.vars]
-ALERT_PATTERN = "^\\s*(?<ticker>\\w+): (?<side>buy|sell) (?<size>\\S+)(?: @ (?<price>\\S+))?.* (?<token>\\S+)\\s*$"
+ALERT_PATTERN = "^\\s*(?<ticker>\\w+): (?<side>buy|sell) (?<size>\\S+)(?: @ (?<price>\\S+))?.*\\s(?<token>\\S+)\\s*$"
 ALLOWED_IPS = ""
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60

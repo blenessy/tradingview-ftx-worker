@@ -76,10 +76,22 @@ Specify your Worker's URL as **Webhook URL**.
 
 For **LIMIT** orders use the following message (replace $TRADINGVIEW_TOKEN with your own token):
 ```
-{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}} $TRADINGVIEW_TOKEN
+{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}}
+
+
+
+
+$TRADINGVIEW_TOKEN
 ```
 
 For **MARKET** orders use the following message (replace $TRADINGVIEW_TOKEN with your own token)
 ```
-{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}} $TRADINGVIEW_TOKEN
+{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}}
+
+
+
+
+$TRADINGVIEW_TOKEN
 ```
+
+**NOTE**: The whitespace is relevant if you don't want the TradingView App to display your token.
