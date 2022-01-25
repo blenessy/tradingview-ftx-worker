@@ -8,20 +8,13 @@ zone_id = ""
 compatibility_date = "2022-01-05"
 
 [vars]
-ALERT_PATTERN = "^\\s*(?<ticker>\\w+): (?<side>buy|sell) (?<size>\\S+)(?: @ (?<price>\\S+))?.*\\s(?<token>\\S+)\\s*$"
+ALERT_PATTERN = "\\b(?<side>buy|sell) (?<size>\\S+) (?<ticker>\\w+)(?: @ (?<price>\\S+))?"
 ALLOWED_IPS = ""
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60
 
-# [secrets]
-# FTX_API_KEY
-# FTX_SECRET
-# FTX_SUBACCOUNT
-# ALERT_PATTERN
-# ALLOWED_IPS
-
 [env.staging.vars]
-ALERT_PATTERN = "^\\s*(?<ticker>\\w+): (?<side>buy|sell) (?<size>\\S+)(?: @ (?<price>\\S+))?.*\\s(?<token>\\S+)\\s*$"
+ALERT_PATTERN = "\\b(?<side>buy|sell) (?<size>\\S+) (?<ticker>\\w+)(?: @ (?<price>\\S+))?"
 ALLOWED_IPS = ""
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60

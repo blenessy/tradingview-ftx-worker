@@ -1,6 +1,6 @@
 # Cloudflare FTX Trading Worker
 
-Do you want to connect your live-runnning [TradingView Strategy](https://www.tradingview.com/pine-script-docs/en/v4/essential/Strategies.html) to [FTX](https://ftx.com/) in a robust way? If yes, this project is most likely for u! If you are not sure, then this project is most likely not for u as it is for a very special purpose. 
+Do you want to connect your live-runnning [TradingView Strategy](https://www.tradingview.com/pine-script-docs/en/v4/essential/Strategies.html) to [FTX](https://ftx.com/) in a robust way? If yes, this project is most likely for u! If you are not sure, then this project is most likely not for u as it has a very special purpose. 
 
 # Architecture
 
@@ -12,30 +12,38 @@ Do you want to connect your live-runnning [TradingView Strategy](https://www.tra
 
 # Quick Start (only requires Cloudflare Workers account)
 
-You will not be able to do much trading but you can quickly try out this project by deploying it to your Cloudflare Workers account with:
+You will not be able to do much trading but you can quickly try out this project by deploying it to your Cloudflare Workers account.
 
-```shell
-wrangler publish --env=staging
-```
+1. Creating a KV namespace with and populate it with some test data:
+    ```shell
+    export WORKER_SECRET=UEO3GZGOYXWVNIXOQPH5TCVOAGHUPKGLI54ECTKUR6VAAVP2
+    export FTX_SECRET=usAFwoAldHBBKy-PzQA3tNR8oMHu7riudUk66ncn:KHaWQHb0kMTnCuw_Tx5h5DhCyP2Wh8fMOoHycd5A:TEST_SUBACCOUNT
+    wrangler kv:namespace create FTX_SECRETS
+    wrangler kv:key put -c wrangler.toml --binding=FTX_SECRETS "$WORKER_SECRET" "$FTX_SECRET"
+    ```
+1. Add the returned `kv_namespaces` to `wrangler.toml`
+1. Publish your worker with:
+    ```shell
+    wrangler publish
+    ```
+1. Connect to your the logs with:
+    ```shell
+    wrangler tail --env=staging
+    ```
+1. Test your worker with:
 
-Connect to your the logs with:
+    ```shell
+    export WORKERS_SUBDOMAIN=example.workers.dev
+    curl -v -X POST "https://tradingview-ftx-worker.$WORKERS_SUBDOMAIN/$WORKER_SECRET" \
+        -d "MY BOT: buy 0.0001 BTCPERP @ 20000"
+    ```
 
-```shell
-wrangler tail --env=staging
-```
+Your worker should whine about "Not logged in: Invalid API key" because the `$FTX_SECRET` is invalid.
 
-POST an TradingView alert with:
+## Key Takeaways
 
-```shell
-# TODO: change to your workers.dev subdomain
-export WORKERS_SUBDOMAIN=example.workers.dev
-# TODO: change to your own token
-export TRADINGVIEW_TOKEN=iP3tGqlTu8PMeA7gDBY7CtVxt7P9Eaw55BWjsHAagX20+aRoojWAjTncMIBnfPe1/rBzyNWmkke/Efhp18nlbg==
-curl -v "https://tradingview-ftx-worker-staging.$WORKERS_SUBDOMAIN" \
-    -d "BTCPERP: buy 0.0001 @ 20000 $TRADINGVIEW_TOKEN"
-```
-
-Your worker should while about `FTX_API_KEY` not being defined at this point.
+1. Each Bot has a **unique and secret URL**, which must only be known to the TradingView alert. **Having access to the URL allows anybody to trade with the associated FTX account**.
+2. A worker can serve multiple TradingView alerts by  adding more `$WORKER_SECRET`/`$FTX_SECRET` pairs to the `FTX_SECRETS` KV namespace.
 
 # Pre-requisites
 
@@ -44,22 +52,17 @@ Your worker should while about `FTX_API_KEY` not being defined at this point.
 1. Sign up for a (free) FTX Trading account. You can get 5% discount by using my referral [here](https://ftx.com/profile#a=tradingviewftxworker).
 1. Create an FTX sub-account and corresponding API Key with trading capabilities.
 
-# User Guide
+# Security
 
-## Cloudflare Workers Setup
+1. By using TLS >=1.2 (enforced by Cloudflare), we rely on the fact that the path (`$WORKER_SECRET`) of the URL is kept secret during TLS handshake. In fact the only information that can be intercepter is leaked during the TLS handshake is the DNS hostname (which is not our security anchor).
 
-### Secret Environment Variables
+1. It is important that the `$WORKER_SECRET` has "enough" entropy so that malicios actors cannot guess it. As the URL can be quite long we recommend the following command for generating strong "enough" (>256-bits of entropy) `$WORKER_SECRET`s:
+   ```shell
+   head -c 55 /dev/urandom | base32
+   ```
+1. Cloudflare's core bussiness is DoS protection. We rely on the fact that they will detect and miticate brute force attempts to the URL - even though the search space is ridiculously big.
 
-Define the following [secret environment variables](https://developers.cloudflare.com/workers/platform/environment-variables) to your Cloudflare worker:
-
-| Name | Purpose |
-| --- | --- |
-| `FTX_API_KEY` | Your FTX API key, which you generate from your [FTX account settings](https://ftx.com/profile) |
-| `FTX_SECRET` | Your FTX API secret associated with your `FTX_API_KEY` |
-| `FTX_SUBACCOUNT` | Optional "sandbox" for your Worker. Highly recommended. |
-| `TRADINGVIEW_TOKEN` | This authenticates your TradingView alerts and will need to be included in your alerts. It is recommended that you generate one with 512-bits of entropy: `head -c 64 /dev/urandom | base64`. |
-
-### Normal (not-secret) Environment Variables
+# Static Configuration
 
 **NOTE**: Although you can change this from the Cloudflare UI, the values get reset to whatever is in [wrangler.toml](./wrangler.toml) every time you publish your worker with the `wrangler` CLI.
 
@@ -70,28 +73,18 @@ Define the following [secret environment variables](https://developers.cloudflar
 | `COOLDOWN_SECONDS` | Seconds of delay before retrying failed  (HTTP >=500) FTX API requests. You can decrease this down to 1 seconds if you are really eager. |
 | `MAX_RETRIES` | Seconds of times failed (HTTP >=500) FTX API requests are retryied before timeout occurs. |
 
-## TradingView Alert Setup
+# TradingView Alert Setup
 
-Specify your Worker's URL as **Webhook URL**.
+Specify your Worker's **secret** URL as **Webhook URL**. 
 
-For **LIMIT** orders use the following message (replace $TRADINGVIEW_TOKEN with your own token):
+For **MARKET** orders use the following message:
 ```
-{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}}
-
-
-
-
-$TRADINGVIEW_TOKEN
+TEST_SUBACCOUNT: {{strategy.order.action}} {{strategy.order.contracts}} {{ticker}}
 ```
 
-For **MARKET** orders use the following message (replace $TRADINGVIEW_TOKEN with your own token)
+For **LIMIT** orders use the following alert message:
 ```
-{{ticker}}: {{strategy.order.action}} {{strategy.order.contracts}} @ {{strategy.order.price}}
-
-
-
-
-$TRADINGVIEW_TOKEN
+TEST_SUBACCOUNT: {{strategy.order.action}} {{strategy.order.contracts}} {{ticker}} @ {{strategy.order.price}}
 ```
 
-**NOTE**: The whitespace is relevant if you don't want the TradingView App to display your token.
+Change `TEST_SUBACCOUNT` to match your FTX sub-account.

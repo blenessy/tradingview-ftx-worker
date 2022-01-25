@@ -73,14 +73,14 @@ function convertTickerToMarket(ticker) {
  * @param {String} text - the String to parse
  * @param {String} token - the expected token in text
  */
-function parseOrder(pattern, text, token) {
+function parseOrder(pattern, text) {
   try {
     const match = text.match(new RegExp(pattern, 'sm'))
-    if (match && match.groups.token === token) {
+    if (match) {
       const market = convertTickerToMarket(match.groups.ticker)
       const size = parseFloat(match.groups.size)
       if (market && size > 0) {
-        const price = match.groups.price || parseFloat(match.groups.price) || null
+        const price = match.groups.price ? parseFloat(match.groups.price) : null
         return {
           "market": market,
           "side": match.groups.side === "buy" ? "buy" : "sell",
@@ -104,38 +104,42 @@ async function handleRequest(request) {
     "content-type": "application/json"
   }
 
+  // make sure that mandatory Environment variables are defined
+  if (typeof FTX_SECRETS === 'undefined') {
+    console.error('The FTX_SECRETS kw:namespace is undefined')
+    return new Response('', { status: 500, headers: headers })
+  }
+  
   if (ALLOWED_IPS && !ALLOWED_IPS.includes(request.headers.get('CF-Connecting-IP'))) {
     return new Response('', { status: 401, headers: headers })
   }
 
-  // make sure that mandatory Environment variables are defined
-  if (typeof FTX_API_KEY === 'undefined') {
-    console.error('FTX_API_KEY is undefined')
-    return new Response('', { status: 500, headers: headers })
-  }
-  if (typeof FTX_SECRET === 'undefined') {
-    console.error('FTX_SECRET is undefined')
-    return new Response('', { status: 500, headers: headers })
-  }
-  if (typeof TRADINGVIEW_TOKEN === 'undefined') {
-    console.error('TRADINGVIEW_TOKEN is undefined')
-    return new Response('', { status: 500, headers: headers })
-  }
-
   console.log(`alertPattern: '${ALERT_PATTERN}'`)
-  const order = parseOrder(ALERT_PATTERN, await request.text(), TRADINGVIEW_TOKEN)
+  const order = parseOrder(ALERT_PATTERN, await request.text())
   if (!order) {
     console.error("Request body is not valid")
     return new Response('', { status: 400, headers: headers })    
   }
 
+  const url = new URL(request.url);
+  // expecting a 240 to 480 bit base32 encoded token 
+  const token = url.pathname.replace(/.*\/([A-Z2-7=]{48,96})$/, '$1')
+  if (!token) {
+    return new Response('', { status: 401, headers: headers })
+  }
+  const secret = await FTX_SECRETS.get(token)
+  if (!secret) {
+    return new Response('', { status: 401, headers: headers })
+  }
+  const auth = secret.split(':')
+
   const ftxBody = JSON.stringify(order)
   console.log(`ftxBody: '${ftxBody}'`)
 
   // fetch FTX API
-  const ftxSubAccount = typeof FTX_SUBACCOUNT !== 'undefined' ? FTX_SUBACCOUNT : null
+  const ftxSubAccount = auth.length == 3 ? auth[2] : null
   const ftxHeaders = await generateFtxRequestHeaders(
-    FTX_API_KEY, FTX_SECRET, 'POST', '/api/orders', ftxBody, ftxSubAccount
+    auth[0], auth[1], 'POST', '/api/orders', ftxBody, ftxSubAccount
   )
   const fetchInit = {
     method: 'POST',
