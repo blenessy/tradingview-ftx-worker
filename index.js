@@ -45,8 +45,8 @@ async function generateFtxRequestHeaders(apiKey, secret, method, path, body, sub
   if (subAccount) {
     headers["ftx-subaccount"] = subAccount
   }
-  console.log(signable)
-  console.log(JSON.stringify(headers))
+  console.log("signable: ", signable)
+  console.log("headers: ", headers)
   return headers
 }
 
@@ -95,6 +95,65 @@ function parseOrder(pattern, text) {
   return null
 }
 
+function createGrafanaGraphiteMetric(timestampSeconds, type, key, value, labels) {
+  return {
+    "name": key,
+    "metric": key,
+    "value": value,
+    "interval": 10,  // in millis
+    "unit": "",
+    "time": timestampSeconds,
+    "mtype": type,
+    "tags": labels,
+  }
+}
+
+/**
+ * Make an attempt to send metrics to Grafana Cloud over Graphite proto.
+ *
+ * @param {String} url to Graphite @ Grafana Cloud
+ * @param {Object} order the processed order
+ * @param {Number} startTime the start time in millis when the request was made to FTX
+ */
+async function notifyGrafanaGraphite(url, order, startTime) {
+  const headers = {"content-type": "application/json"}
+  try {
+    const parsedUrl = new URL(url)
+    if (parsedUrl.username && parsedUrl.password) {
+      headers['Authorization'] = 'Basic ' + btoa(`${parsedUrl.username}:${decodeURIComponent(parsedUrl.password)}`)
+      // remove username/password from the URL
+      url = `${parsedUrl.origin}${parsedUrl.pathname}${parsedUrl.search}${parsedUrl.hash}`
+    }
+  } catch (error) {
+    /* url is null */ 
+    console.warn("Invalid Grafana Graphite URL: ", url)
+  }
+  // https://github.com/grafana/cloud-graphite-scripts/blob/master/send/main.go
+  const timestamp = Math.floor(startTime / 1000)
+  const ftxRespTime = new Date().getTime() - startTime
+  const labels = ["broker=ftx", `market=${order.market}`, `side=${order.side}`]
+  const metrics = [
+    createGrafanaGraphiteMetric(timestamp, "gauge", "bots_order_size", order.size, labels),
+    createGrafanaGraphiteMetric(timestamp, "gauge", "bots_broker_response_time", ftxRespTime, labels),
+  ]
+  if (order.price) {
+    metrics.push(
+      createGrafanaGraphiteMetric(timestamp, "gauge", "bots_order_price", order.price, labels)
+    )
+  }
+  const fetchInit = {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify(metrics)
+  }
+  console.log("fetchInit: ", fetchInit)
+  response = await fetch(url, fetchInit)
+  text = await response.text()
+  if (response.status != 200) {
+    console.warn(`unexpeced ${response.status} response from Grafana Cloud: ${text}`)
+  }
+}
+
 /**
  * Respond with the FTX API response.
  * @param {Request} request - the incoming request to handler
@@ -114,12 +173,13 @@ async function handleRequest(request) {
     return new Response('', { status: 401, headers: headers })
   }
 
-  console.log(`alertPattern: '${ALERT_PATTERN}'`)
+  console.log("alertPattern: ", ALERT_PATTERN)
   const order = parseOrder(ALERT_PATTERN, await request.text())
   if (!order) {
     console.error("Request body is not valid")
     return new Response('', { status: 400, headers: headers })    
   }
+  console.log("order: ", order)
 
   const url = new URL(request.url);
   // expecting a 240 to 480 bit base32 encoded token 
@@ -134,7 +194,6 @@ async function handleRequest(request) {
   const auth = secret.split(':')
 
   const ftxBody = JSON.stringify(order)
-  console.log(`ftxBody: '${ftxBody}'`)
 
   // fetch FTX API
   const ftxSubAccount = auth.length == 3 ? auth[2] : null
@@ -149,16 +208,21 @@ async function handleRequest(request) {
   
   // retry order until finished or timer expired
   const cooldownMillis = Math.max(COOLDOWN_SECONDS, 1) * 1000  // lets be nice to the FTX API (min 1 seconds)
+  const reqStartTime =  new Date().getTime();
   for (let i = 1; i <= MAX_RETRIES; i++) {
     const response = await fetch('https://ftx.com/api/orders', fetchInit)
     // consume the Response object otherwise we will run out of connections quickly
     const text = await response.text()
     if (response.status < 500) {
+      if (typeof GRAFANA_GRAPHITE_URL !== 'undefined') {
+        await notifyGrafanaGraphite(GRAFANA_GRAPHITE_URL, order, reqStartTime)
+      }
       return new Response(text, { status: response.status, headers: headers })
     }
     console.warn(`FTX returned ${response.status} (attempt: ${i})- trying again later ...`)
     await sleep(cooldownMillis)
   }
+
   return new Response(text, { status: 504, headers: headers })
 }
 

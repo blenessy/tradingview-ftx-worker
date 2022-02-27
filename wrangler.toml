@@ -12,9 +12,11 @@ ALERT_PATTERN = "\\b(?<side>buy|sell) (?<size>\\S+) (?<ticker>\\w+)(?: @ (?<pric
 ALLOWED_IPS = ""
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60
+#GRAFANA_GRAPHITE_URL = "https://xxxxxxx:yyyyyyy@graphite-prod-01-eu-west-0.grafana.net/graphite/metrics"
 
 [env.staging.vars]
 ALERT_PATTERN = "\\b(?<side>buy|sell) (?<size>\\S+) (?<ticker>\\w+)(?: @ (?<price>\\S+))?"
 ALLOWED_IPS = ""
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60
+#GRAFANA_GRAPHITE_URL = "https://xxxxxxx:yyyyyyy@graphite-prod-01-eu-west-0.grafana.net/graphite/metrics"
