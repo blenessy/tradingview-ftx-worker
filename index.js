@@ -73,7 +73,7 @@ function convertTickerToMarket(ticker) {
  * @param {String} text - the String to parse
  * @param {String} token - the expected token in text
  */
-function parseOrder(pattern, text) {
+function parseBotAndOrder(pattern, text) {
   try {
     const match = text.match(new RegExp(pattern, 'sm'))
     if (match) {
@@ -81,18 +81,19 @@ function parseOrder(pattern, text) {
       const size = parseFloat(match.groups.size)
       if (market && size > 0) {
         const price = match.groups.price ? parseFloat(match.groups.price) : null
-        return {
+        const order = {
           "market": market,
           "side": match.groups.side === "buy" ? "buy" : "sell",
           "type": price ? "limit" : "market",
           "size": size,
           "price": price
         }
+        return [match.groups.bot, order]
       }
     }
   } catch (_) {
   }
-  return null
+  return [null, null]
 }
 
 function createGrafanaGraphiteMetric(timestampSeconds, type, key, value, labels) {
@@ -115,7 +116,7 @@ function createGrafanaGraphiteMetric(timestampSeconds, type, key, value, labels)
  * @param {Object} order the processed order
  * @param {Number} startTime the start time in millis when the request was made to FTX
  */
-async function notifyGrafanaGraphite(url, order, startTime) {
+async function notifyGrafanaGraphite(url, bot, order, startTime) {
   const headers = {"content-type": "application/json"}
   try {
     const parsedUrl = new URL(url)
@@ -131,7 +132,7 @@ async function notifyGrafanaGraphite(url, order, startTime) {
   // https://github.com/grafana/cloud-graphite-scripts/blob/master/send/main.go
   const timestamp = Math.floor(startTime / 1000)
   const ftxRespTime = new Date().getTime() - startTime
-  const labels = ["broker=ftx", `market=${order.market}`, `side=${order.side}`]
+  const labels = ["broker=ftx", `market=${order.market}`, `side=${order.side}`, `bot=${bot}`]
   const metrics = [
     createGrafanaGraphiteMetric(timestamp, "gauge", "bots_order_size", order.size, labels),
     createGrafanaGraphiteMetric(timestamp, "gauge", "bots_broker_response_time", ftxRespTime, labels),
@@ -174,7 +175,7 @@ async function handleRequest(request) {
   }
 
   console.log("alertPattern: ", ALERT_PATTERN)
-  const order = parseOrder(ALERT_PATTERN, await request.text())
+  const [bot, order] = parseBotAndOrder(ALERT_PATTERN, await request.text())
   if (!order) {
     console.error("Request body is not valid")
     return new Response('', { status: 400, headers: headers })    
@@ -215,7 +216,7 @@ async function handleRequest(request) {
     const text = await response.text()
     if (response.status < 500) {
       if (typeof GRAFANA_GRAPHITE_URL !== 'undefined') {
-        await notifyGrafanaGraphite(GRAFANA_GRAPHITE_URL, order, reqStartTime)
+        await notifyGrafanaGraphite(GRAFANA_GRAPHITE_URL, bot, order, reqStartTime)
       }
       return new Response(text, { status: response.status, headers: headers })
     }

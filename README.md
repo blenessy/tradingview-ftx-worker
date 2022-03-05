@@ -72,6 +72,7 @@ Your worker should whine about "Not logged in: Invalid API key" because the `$FT
 | `ALLOWED_IPS` | Whitelists the [TradingView Alert Service IPs](https://www.tradingview.com/support/solutions/43000529348-about-webhooks/). Normally, you don't want to change these. |
 | `COOLDOWN_SECONDS` | Seconds of delay before retrying failed  (HTTP >=500) FTX API requests. You can decrease this down to 1 seconds if you are really eager. |
 | `MAX_RETRIES` | Seconds of times failed (HTTP >=500) FTX API requests are retryied before timeout occurs. |
+| `GRAFANA_GRAPHITE_URL` | Optional [Grafana Cloud/Graphite](https://github.com/grafana/cloud-graphite-scripts/blob/master/send/main.go) **including** username and password to enable pushing metrics. |
 
 # TradingView Alert Setup
 
@@ -79,12 +80,12 @@ Specify your Worker's **secret** URL as **Webhook URL**.
 
 For **MARKET** orders use the following message:
 ```
-TEST_SUBACCOUNT: {{strategy.order.action}} {{strategy.order.contracts}} {{ticker}}
+BOT_ID: {{strategy.order.action}} {{strategy.order.contracts}} {{ticker}}
 ```
 
 For **LIMIT** orders use the following alert message:
 ```
-TEST_SUBACCOUNT: {{strategy.order.action}} {{strategy.order.contracts}} {{ticker}} @ {{strategy.order.price}}
+BOT_ID: {{strategy.order.action}} {{strategy.order.contracts}} {{ticker}} @ {{strategy.order.price}}
 ```
 
-Change `TEST_SUBACCOUNT` to match your FTX sub-account.
+Change `BOT_ID` to your desired bot identifier.
