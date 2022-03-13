@@ -9,7 +9,8 @@ compatibility_date = "2022-01-05"
 
 [vars]
 ALERT_PATTERN = "(?<bot>\\S+): (?<side>buy|sell) (?<size>\\S+) (?<ticker>\\w+)(?: @ (?<price>\\S+))?"
-ALLOWED_IPS = ""
+# https://www.tradingview.com/support/solutions/43000529348-about-webhooks/
+ALLOWED_IPS = "52.89.214.238,34.212.75.30,54.218.53.128,52.32.178.7"
 COOLDOWN_SECONDS = 5
 MAX_RETRIES = 60
 #GRAFANA_GRAPHITE_URL = "https://xxxxxxx:yyyyyyy@graphite-prod-01-eu-west-0.grafana.net/graphite/metrics"
